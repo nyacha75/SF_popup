@@ -1,26 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[ SYSTEM : SF POPUP GENERATOR ]</title>
+    
+    <!-- 💡 썸네일(메타 태그) 유지 -->
+    <meta property="og:title" content="[ SYSTEM : SF POPUP GENERATOR ]">
+    <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (다중 변환 지원)">
+    <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
+    <meta name="twitter:card" content="summary_large_image">
+    
+    <!-- 💡 Gradio Lite 불러오기 -->
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+    
+    <style>
+        body { background-color: #0a0f18; margin: 0; padding: 0; }
+        gradio-lite { display: block; height: 100vh; }
+    </style>
+</head>
+<body>
+
+<gradio-lite>
+<gradio-requirements>
+Pillow
+</gradio-requirements>
+<gradio-file name="app.py" entrypoint>
 import gradio as gr
 from PIL import Image, ImageEnhance, ImageDraw
 import tempfile
 import os
 import math
+import zipfile
 
 # ==========================================
 # 🎨 [컬러 설정] 이곳에서 원하는 컬러코드로 변경하세요!
 # ==========================================
-EFFECT_R, EFFECT_G, EFFECT_B = 0, 255, 255  # RGB 값 (예: 시안색 0, 255, 255)
-EFFECT_HEX = "#00ffff"                      # HEX 코드
+EFFECT_R, EFFECT_G, EFFECT_B = 0, 255, 255
+EFFECT_HEX = "#00ffff"
 # ==========================================
 
 custom_css = f"""
-body, gradio-app {{ 
-    background-color: #0a0f18 !important; 
-}}
+body, gradio-app {{ background-color: #0a0f18 !important; }}
 .gradio-container {{
     background-color: #111a28 !important;
     border: 1px solid {EFFECT_HEX} !important;
     box-shadow: 0 0 15px rgba({EFFECT_R}, {EFFECT_G}, {EFFECT_B}, 0.2) !important;
     border-radius: 8px !important;
-    max-width: 500px !important;
+    max-width: 600px !important; /* 여러 파일 리스트를 위해 살짝 넓힘 */
     margin: 40px auto !important;
     padding: 30px !important;
 }}
@@ -61,15 +89,8 @@ body, gradio-app {{
 footer {{ display: none !important; }}
 """
 
-custom_head = """
-<meta property="og:title" content="[ SYSTEM : SF POPUP GENERATOR ]">
-<meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기">
-<meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
-<meta name="twitter:card" content="summary_large_image">
-"""
-
 def generate_sf_popup(input_path):
-    if input_path is None:
+    if not input_path:
         return None
         
     original_filename = os.path.basename(input_path)
@@ -88,16 +109,15 @@ def generate_sf_popup(input_path):
 
     frame_list, durations = [], []
 
-    # 1. 대기 프레임
+    # 투명 배경 기본 프레임
     frame_list.append(Image.new("RGBA", (w, h), (0, 0, 0, 0)))
     durations.append(100)
 
-    # 2. 점에서 시작하여 터지는 렌즈 플레어 효과 (더 세밀한 4단계 설정)
     sparkle_phases = [
-        (0.01, 100, 40),  # 1단계: 가운데 미세한 점 등장
-        (0.06, 220, 30),  # 2단계: 빛이 응축되며 살짝 커짐
-        (0.45, 255, 50),  # 3단계: 팟! 하고 크게 터짐
-        (0.12, 160, 40)   # 4단계: 잔상과 함께 수축
+        (0.01, 100, 40), 
+        (0.06, 220, 30), 
+        (0.45, 255, 50), 
+        (0.12, 160, 40)  
     ]
     
     for size_ratio, alpha, duration in sparkle_phases:
@@ -121,7 +141,6 @@ def generate_sf_popup(input_path):
         frame_list.append(s_frame)
         durations.append(duration) 
 
-    # 3. 레이저 잔상
     fh1 = max(2, int(h * 0.015)) 
     ty1 = (h - fh1) // 2
     flash_line1 = img.crop((0, ty1, w, ty1 + fh1))
@@ -132,7 +151,6 @@ def generate_sf_popup(input_path):
     frame_list.append(c_flash1)
     durations.append(30) 
 
-    # 4. 레이저 굵어짐
     fh2 = max(4, int(h * 0.08)) 
     ty2 = (h - fh2) // 2
     flash_line2 = img.crop((0, ty2, w, ty2 + fh2))
@@ -145,7 +163,6 @@ def generate_sf_popup(input_path):
     frame_list.append(c_flash2)
     durations.append(40)
 
-    # 5. 홀로그램 전개 
     frames = 15 
     for i in range(1, frames + 1):
         t = i / frames
@@ -168,21 +185,55 @@ def generate_sf_popup(input_path):
     temp_dir = tempfile.gettempdir()
     out_path = os.path.join(temp_dir, output_filename)
     
+    # background=(0,0,0,0)를 추가하여 투명도를 강제 보장합니다.
     frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
-                       format="WebP", duration=durations, loop=1, lossless=False, quality=90)
+                       format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
     
     return out_path
 
-with gr.Blocks(css=custom_css, theme=gr.themes.Base(), head=custom_head, title="SF POPUP GENERATOR") as app:
+def process_batch(files):
+    if not files:
+        return None, None
+        
+    out_files = []
+    
+    # 1. 개별 파일 변환 처리
+    for f in files:
+        res = generate_sf_popup(f)
+        if res:
+            out_files.append(res)
+            
+    if not out_files:
+        return None, None
+        
+    # 2. 압축 파일(ZIP) 생성
+    zip_path = os.path.join(tempfile.gettempdir(), "SF_Popups_Bundle.zip")
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for filepath in out_files:
+            zipf.write(filepath, os.path.basename(filepath))
+            
+    # 개별 리스트와 ZIP 파일을 각각 반환
+    return out_files, zip_path
+
+with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
     gr.HTML("<div class='title-text'>[ SYSTEM : SF POPUP ]</div>")
-    gr.HTML("<div class='subtitle-text'>이미지를 첨부하면 마커 패널용 SF 컷인이 생성됩니다.</div>")
+    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.</div>")
     
     with gr.Column():
-        image_input = gr.Image(type="filepath", label="이미지 업로드", show_label=False)
+        # 다중 파일 업로드를 지원하도록 수정됨 (file_count="multiple")
+        file_input = gr.File(label="이미지 업로드 (여러 장 드래그 앤 드롭)", file_count="multiple", type="filepath", file_types=["image"])
         submit_btn = gr.Button("SF 애니메이션 생성 시작", elem_id="action-btn")
-        file_output = gr.File(label="완성된 파일 다운로드", show_label=False)
+        
+        with gr.Row():
+            # 출력 영역을 개별 파일 다운로드와 ZIP 다운로드로 나눔
+            indiv_output = gr.File(label="개별 파일 다운로드", file_count="multiple")
+            zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)")
             
-    submit_btn.click(fn=generate_sf_popup, inputs=image_input, outputs=file_output)
+    submit_btn.click(fn=process_batch, inputs=file_input, outputs=[indiv_output, zip_output])
 
-if __name__ == "__main__":
-    app.launch()
+app.launch()
+</gradio-file>
+</gradio-lite>
+
+</body>
+</html>
