@@ -10,9 +10,13 @@
     <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
     <meta name="twitter:card" content="summary_large_image">
     
-    <!-- 최신 Gradio Lite 버전을 그대로 사용합니다 -->
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+    <!-- 
+      Gradio Lite(@gradio/lite)는 2025년 9월 Gradio 팀에 의해 개발이 종료(archive)되어
+      더 이상 새 버전이 나오지 않습니다. 5.45.0이 사실상 마지막(고정) 버전이므로,
+      "latest"를 그대로 쓰는 대신 버전을 명시적으로 고정해 둡니다. (동작은 동일합니다)
+    -->
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@5.45.0/dist/lite.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@5.45.0/dist/lite.css" />
     
     <style>
         body { background-color: #0a0f18; margin: 0; padding: 0; }
@@ -101,150 +105,170 @@ footer {{ display: none !important; }}
 """
 
 def generate_sf_popup(input_path):
+    """
+    성공 시: (출력파일경로, None)
+    실패 시: (None, "에러 설명 문자열")
+    -> 예전에는 실패하면 그냥 None만 반환해서 화면에 아무 표시도 안 되고
+       "그냥 안 됨"처럼 보였습니다. 이제는 실패 이유를 화면에 보여줍니다.
+    """
     if not input_path:
-        return None
-        
+        return None, "입력 파일이 없습니다."
+
     original_filename = os.path.basename(input_path)
     name_only, _ = os.path.splitext(original_filename)
-    output_filename = f"SF_{name_only}.webp" 
-        
+    output_filename = f"SF_{name_only}.webp"
+
     try:
         img = Image.open(input_path).convert("RGBA")
-    except Exception:
-        return None
+    except Exception as e:
+        return None, f"이미지를 열 수 없습니다 ({type(e).__name__}: {e})"
 
-    w, h = img.size
-    max_width = 800 
+    try:
+        w, h = img.size
+        max_width = 800
 
-    if w > max_width:
-        scale = max_width / w
-        new_w, new_h = int(w * scale), int(h * scale)
-        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        w, h = new_w, new_h
+        if w > max_width:
+            scale = max_width / w
+            new_w, new_h = int(w * scale), int(h * scale)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            w, h = new_w, new_h
 
-    frame_list, durations = [], []
+        frame_list, durations = [], []
 
-    # 1. 투명 배경 대기 프레임
-    frame_list.append(Image.new("RGBA", (w, h), (0, 0, 0, 0)))
-    durations.append(100)
+        # 1. 투명 배경 대기 프레임
+        frame_list.append(Image.new("RGBA", (w, h), (0, 0, 0, 0)))
+        durations.append(100)
 
-    # 2. 렌즈 플레어 효과
-    sparkle_phases = [
-        (0.01, 100, 40), 
-        (0.06, 220, 30), 
-        (0.45, 255, 50), 
-        (0.12, 160, 40)  
-    ]
-    
-    for size_ratio, alpha, duration in sparkle_phases:
-        s_frame = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(s_frame)
-        cx, cy = w // 2, h // 2
+        # 2. 렌즈 플레어 효과
+        sparkle_phases = [
+            (0.01, 100, 40), 
+            (0.06, 220, 30), 
+            (0.45, 255, 50), 
+            (0.12, 160, 40)  
+        ]
         
-        r = max(2, int(min(w, h) * size_ratio)) 
-        inner_r = max(1, int(r * 0.15))
+        for size_ratio, alpha, duration in sparkle_phases:
+            s_frame = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(s_frame)
+            cx, cy = w // 2, h // 2
+            
+            r = max(2, int(min(w, h) * size_ratio)) 
+            inner_r = max(1, int(r * 0.15))
 
-        flare_w, flare_h = int(w * size_ratio * 1.5), max(2, int(h * 0.015))
-        draw.rectangle([cx - flare_w, cy - flare_h, cx + flare_w, cy + flare_h], fill=(EFFECT_R, EFFECT_G, EFFECT_B, int(alpha * 0.7)))
+            flare_w, flare_h = int(w * size_ratio * 1.5), max(2, int(h * 0.015))
+            draw.rectangle([cx - flare_w, cy - flare_h, cx + flare_w, cy + flare_h], fill=(EFFECT_R, EFFECT_G, EFFECT_B, int(alpha * 0.7)))
 
-        points = [(cx, cy - r), (cx + inner_r, cy - inner_r), (cx + r, cy), (cx + inner_r, cy + inner_r), 
-                  (cx, cy + r), (cx - inner_r, cy + inner_r), (cx - r, cy), (cx - inner_r, cy - inner_r)]
-        draw.polygon(points, fill=(EFFECT_R, EFFECT_G, EFFECT_B, alpha))
+            points = [(cx, cy - r), (cx + inner_r, cy - inner_r), (cx + r, cy), (cx + inner_r, cy + inner_r), 
+                      (cx, cy + r), (cx - inner_r, cy + inner_r), (cx - r, cy), (cx - inner_r, cy - inner_r)]
+            draw.polygon(points, fill=(EFFECT_R, EFFECT_G, EFFECT_B, alpha))
+            
+            cr = max(1, int(inner_r * 1.2))
+            draw.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=(255, 255, 255, alpha))
+            
+            frame_list.append(s_frame)
+            durations.append(duration) 
+
+        # 3. 레이저 잔상
+        fh1 = max(2, int(h * 0.015)) 
+        ty1 = (h - fh1) // 2
+        flash_line1 = img.crop((0, ty1, w, ty1 + fh1))
+        color_solid1 = Image.new("RGBA", flash_line1.size, (EFFECT_R, EFFECT_G, EFFECT_B, 200))
+        color_solid1.putalpha(flash_line1.split()[3]) 
+        c_flash1 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        c_flash1.paste(color_solid1, (0, ty1))
+        frame_list.append(c_flash1)
+        durations.append(30) 
+
+        # 4. 레이저 굵어짐
+        fh2 = max(4, int(h * 0.08)) 
+        ty2 = (h - fh2) // 2
+        flash_line2 = img.crop((0, ty2, w, ty2 + fh2))
+        color_solid2 = Image.new("RGBA", flash_line2.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
+        color_solid2.putalpha(flash_line2.split()[3])
+        mixed_flash = Image.blend(flash_line2, color_solid2, alpha=0.8)
+        mixed_flash = ImageEnhance.Brightness(mixed_flash).enhance(2.5)
+        c_flash2 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        c_flash2.paste(mixed_flash, (0, ty2))
+        frame_list.append(c_flash2)
+        durations.append(40)
+
+        # 5. 홀로그램 전개 
+        frames = 15 
+        for i in range(1, frames + 1):
+            t = i / frames
+            ease_t = 1 - pow(1 - t, 3) 
+            ch = max(1, min(h, int(h * ease_t)))
+            ty = (h - ch) // 2
+            cropped = img.crop((0, ty, w, ty + ch))
+            
+            tint_ratio = (1 - ease_t) * 0.7
+            if tint_ratio > 0.01:
+                color_overlay = Image.new("RGBA", cropped.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
+                color_overlay.putalpha(cropped.split()[3]) 
+                cropped = Image.blend(cropped, color_overlay, alpha=tint_ratio)
+            
+            c = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            c.paste(cropped, (0, ty))
+            frame_list.append(c)
+            durations.append(450 // frames)
+
+        out_path = os.path.join(tempfile.gettempdir(), output_filename)
         
-        cr = max(1, int(inner_r * 1.2))
-        draw.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=(255, 255, 255, alpha))
+        # 투명도(background=(0,0,0,0)) 완벽 유지하며 WebP 저장
+        frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
+                           format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
         
-        frame_list.append(s_frame)
-        durations.append(duration) 
-
-    # 3. 레이저 잔상
-    fh1 = max(2, int(h * 0.015)) 
-    ty1 = (h - fh1) // 2
-    flash_line1 = img.crop((0, ty1, w, ty1 + fh1))
-    color_solid1 = Image.new("RGBA", flash_line1.size, (EFFECT_R, EFFECT_G, EFFECT_B, 200))
-    color_solid1.putalpha(flash_line1.split()[3]) 
-    c_flash1 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    c_flash1.paste(color_solid1, (0, ty1))
-    frame_list.append(c_flash1)
-    durations.append(30) 
-
-    # 4. 레이저 굵어짐
-    fh2 = max(4, int(h * 0.08)) 
-    ty2 = (h - fh2) // 2
-    flash_line2 = img.crop((0, ty2, w, ty2 + fh2))
-    color_solid2 = Image.new("RGBA", flash_line2.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
-    color_solid2.putalpha(flash_line2.split()[3])
-    mixed_flash = Image.blend(flash_line2, color_solid2, alpha=0.8)
-    mixed_flash = ImageEnhance.Brightness(mixed_flash).enhance(2.5)
-    c_flash2 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    c_flash2.paste(mixed_flash, (0, ty2))
-    frame_list.append(c_flash2)
-    durations.append(40)
-
-    # 5. 홀로그램 전개 
-    frames = 15 
-    for i in range(1, frames + 1):
-        t = i / frames
-        ease_t = 1 - pow(1 - t, 3) 
-        ch = max(1, min(h, int(h * ease_t)))
-        ty = (h - ch) // 2
-        cropped = img.crop((0, ty, w, ty + ch))
-        
-        tint_ratio = (1 - ease_t) * 0.7
-        if tint_ratio > 0.01:
-            color_overlay = Image.new("RGBA", cropped.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
-            color_overlay.putalpha(cropped.split()[3]) 
-            cropped = Image.blend(cropped, color_overlay, alpha=tint_ratio)
-        
-        c = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        c.paste(cropped, (0, ty))
-        frame_list.append(c)
-        durations.append(450 // frames)
-
-    out_path = os.path.join(tempfile.gettempdir(), output_filename)
-    
-    # 투명도(background=(0,0,0,0)) 완벽 유지하며 WebP 저장
-    frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
-                       format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
-    
-    return out_path
+        return out_path, None
+    except Exception as e:
+        return None, f"변환 중 오류 발생 ({type(e).__name__}: {e})"
 
 def process_batch(files):
     if not files:
-        return None, None
-        
+        return None, None, "⚠️ 업로드된 파일이 없습니다. 이미지를 먼저 올려주세요."
+
     out_files = []
-    
+    error_msgs = []
+
     # 1. 다중 파일 개별 변환
     for f in files:
-        res = generate_sf_popup(f)
-        if res:
-            out_files.append(res)
-            
+        path, err = generate_sf_popup(f)
+        if path:
+            out_files.append(path)
+        else:
+            error_msgs.append(f"- {os.path.basename(f)}: {err}")
+
     if not out_files:
-        return None, None
-        
+        return None, None, "❌ 변환 실패\n" + "\n".join(error_msgs)
+
     # 2. 압축 파일(ZIP) 묶기
     zip_path = os.path.join(tempfile.gettempdir(), "SF_Popups_Bundle.zip")
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for filepath in out_files:
-            zipf.write(filepath, os.path.basename(filepath))
-            
-    return out_files, zip_path
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for filepath in out_files:
+                zipf.write(filepath, os.path.basename(filepath))
+    except Exception as e:
+        return out_files, None, f"⚠️ 개별 파일은 생성되었지만 ZIP 압축 중 오류: {type(e).__name__}: {e}"
+
+    status = f"✅ 총 {len(out_files)}개 파일 변환 완료!"
+    if error_msgs:
+        status += "\n⚠️ 일부 파일 실패:\n" + "\n".join(error_msgs)
+
+    return out_files, zip_path, status
 
 with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
     gr.HTML("<div class='title-text'>[ SYSTEM : SF POPUP ]</div>")
-    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.<br>투명한 배경 이미지는 투명도가 유지됩니다.</div>")
+    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.<br>투명한 배경 이미지는 투명도가 유지됩니다.<br>⏳ 최초 실행 시 브라우저에서 Python 환경을 준비하느라 10~30초 정도 걸릴 수 있습니다.</div>")
     
     with gr.Column():
         file_input = gr.File(label="이미지 업로드 (여러 장 드래그 앤 드롭)", file_count="multiple", type="filepath", file_types=["image"])
         submit_btn = gr.Button("SF 애니메이션 생성 시작", elem_id="action-btn")
+        status_output = gr.Textbox(label="상태 / 오류 메시지", interactive=False, lines=3)
         
         with gr.Row():
             indiv_output = gr.File(label="개별 WebP 파일 목록", file_count="multiple", type="filepath")
-            zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)")
+            zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)", type="filepath")
             
-    submit_btn.click(fn=process_batch, inputs=file_input, outputs=[indiv_output, zip_output])
+    submit_btn.click(fn=process_batch, inputs=file_input, outputs=[indiv_output, zip_output, status_output])
 
 app.launch()
 </gradio-file>
