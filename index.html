@@ -5,15 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>[ SYSTEM : SF POPUP GENERATOR ]</title>
     
-    <!-- 💡 썸네일(메타 태그) 유지 -->
     <meta property="og:title" content="[ SYSTEM : SF POPUP GENERATOR ]">
     <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (다중 변환 지원)">
     <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
     <meta name="twitter:card" content="summary_large_image">
     
-    <!-- 💡 Gradio Lite 불러오기 -->
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+    <!-- 💡 에러 해결: 항상 최신 버전을 부르지 않고, 가장 안정적인 4.42.0 버전으로 고정했습니다 -->
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@4.42.0/dist/lite.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@4.42.0/dist/lite.css" />
     
     <style>
         body { background-color: #0a0f18; margin: 0; padding: 0; }
@@ -48,7 +47,7 @@ body, gradio-app {{ background-color: #0a0f18 !important; }}
     border: 1px solid {EFFECT_HEX} !important;
     box-shadow: 0 0 15px rgba({EFFECT_R}, {EFFECT_G}, {EFFECT_B}, 0.2) !important;
     border-radius: 8px !important;
-    max-width: 600px !important; /* 여러 파일 리스트를 위해 살짝 넓힘 */
+    max-width: 600px !important;
     margin: 40px auto !important;
     padding: 30px !important;
 }}
@@ -185,7 +184,6 @@ def generate_sf_popup(input_path):
     temp_dir = tempfile.gettempdir()
     out_path = os.path.join(temp_dir, output_filename)
     
-    # background=(0,0,0,0)를 추가하여 투명도를 강제 보장합니다.
     frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
                        format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
     
@@ -212,7 +210,6 @@ def process_batch(files):
         for filepath in out_files:
             zipf.write(filepath, os.path.basename(filepath))
             
-    # 개별 리스트와 ZIP 파일을 각각 반환
     return out_files, zip_path
 
 with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
@@ -220,12 +217,10 @@ with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
     gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.</div>")
     
     with gr.Column():
-        # 다중 파일 업로드를 지원하도록 수정됨 (file_count="multiple")
         file_input = gr.File(label="이미지 업로드 (여러 장 드래그 앤 드롭)", file_count="multiple", type="filepath", file_types=["image"])
         submit_btn = gr.Button("SF 애니메이션 생성 시작", elem_id="action-btn")
         
         with gr.Row():
-            # 출력 영역을 개별 파일 다운로드와 ZIP 다운로드로 나눔
             indiv_output = gr.File(label="개별 파일 다운로드", file_count="multiple")
             zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)")
             
