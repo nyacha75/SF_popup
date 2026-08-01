@@ -10,7 +10,6 @@
     <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
     <meta name="twitter:card" content="summary_large_image">
 
-    <!-- 외부 라이브러리는 다운로드를 묶어주는 ZIP 처리용 단 하나만 남겼습니다! -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <style>
@@ -232,7 +231,6 @@
 </div>
 
 <script>
-    // JS 색상 변수 (기본 시안색)
     let EFFECT_R = 0, EFFECT_G = 255, EFFECT_B = 255;
 
     const colorPicker = document.getElementById('color-picker');
@@ -290,7 +288,6 @@
         });
     };
 
-    // DataURL(base64)를 이진 데이터 배열로 빠르게 변환
     function dataURLToUint8Array(dataURL) {
         const base64 = dataURL.split(',')[1];
         const binaryString = atob(base64);
@@ -302,17 +299,15 @@
         return bytes;
     }
 
-    // 💡 [핵심 엔진] 정지된 WebP들을 완벽한 '움직이는 WebP(Animated WebP)'로 합치는(Muxing) 커스텀 로직
     function encodeAnimatedWebP(frames, width, height) {
         let anmfChunks = [];
         let totalAnmfSize = 0;
 
         for (let frame of frames) {
-            let offset = 12; // RIFF헤더 + 파일크기 + WEBP헤더 건너뛰기
+            let offset = 12; 
             let frameData = [];
             let frameDataSize = 0;
 
-            // 정지된 WebP 내부의 이미지 청크(ALPH, VP8, VP8L)만 쏙쏙 뽑아냅니다.
             while (offset < frame.buffer.length) {
                 let id = String.fromCharCode(frame.buffer[offset], frame.buffer[offset+1], frame.buffer[offset+2], frame.buffer[offset+3]);
                 let size = frame.buffer[offset + 4] | (frame.buffer[offset + 5] << 8) | (frame.buffer[offset + 6] << 16) | (frame.buffer[offset + 7] << 24);
@@ -326,16 +321,14 @@
                 offset += 8 + paddedSize;
             }
 
-            // 애니메이션 프레임(ANMF) 헤더 조립
             let anmfSize = 16 + frameDataSize;
             let anmfHeader = new Uint8Array(24);
-            anmfHeader.set([65, 78, 77, 70], 0); // "ANMF" 청크
+            anmfHeader.set([65, 78, 77, 70], 0); 
             anmfHeader[4] = anmfSize & 0xff; anmfHeader[5] = (anmfSize >> 8) & 0xff; anmfHeader[6] = (anmfSize >> 16) & 0xff; anmfHeader[7] = (anmfSize >> 24) & 0xff;
-            // X, Y는 0이므로 패스
+            
             anmfHeader[14] = (width - 1) & 0xff; anmfHeader[15] = ((width - 1) >> 8) & 0xff; anmfHeader[16] = ((width - 1) >> 16) & 0xff;
             anmfHeader[17] = (height - 1) & 0xff; anmfHeader[18] = ((height - 1) >> 8) & 0xff; anmfHeader[19] = ((height - 1) >> 16) & 0xff;
             anmfHeader[20] = frame.duration & 0xff; anmfHeader[21] = (frame.duration >> 8) & 0xff; anmfHeader[22] = (frame.duration >> 16) & 0xff;
-            // Flags: 2 (Do not blend, just replace the transparent canvas)
             anmfHeader[23] = 2;
 
             anmfChunks.push({ header: anmfHeader, data: frameData });
@@ -345,23 +338,21 @@
         let fileSize = 4 + 18 + 14 + totalAnmfSize;
         let finalBuffer = new Uint8Array(8 + fileSize);
 
-        finalBuffer.set([82, 73, 70, 70], 0); // "RIFF"
+        finalBuffer.set([82, 73, 70, 70], 0); 
         finalBuffer[4] = fileSize & 0xff; finalBuffer[5] = (fileSize >> 8) & 0xff; finalBuffer[6] = (fileSize >> 16) & 0xff; finalBuffer[7] = (fileSize >> 24) & 0xff;
-        finalBuffer.set([87, 69, 66, 80], 8); // "WEBP"
+        finalBuffer.set([87, 69, 66, 80], 8); 
 
-        // 글로벌 VP8X 헤더 조립 (애니메이션, 투명도 선언)
-        finalBuffer.set([86, 80, 56, 88], 12); // "VP8X"
+        finalBuffer.set([86, 80, 56, 88], 12); 
         finalBuffer.set([10, 0, 0, 0], 16); 
-        finalBuffer[20] = 0x12; // Animation + Alpha bit ON
+        finalBuffer[20] = 0x12; 
         finalBuffer.set([0, 0, 0], 21);
         finalBuffer[24] = (width - 1) & 0xff; finalBuffer[25] = ((width - 1) >> 8) & 0xff; finalBuffer[26] = ((width - 1) >> 16) & 0xff;
         finalBuffer[27] = (height - 1) & 0xff; finalBuffer[28] = ((height - 1) >> 8) & 0xff; finalBuffer[29] = ((height - 1) >> 16) & 0xff;
 
-        // ANIM 헤더 조립 (루프 횟수 등)
-        finalBuffer.set([65, 78, 73, 77], 30); // "ANIM"
+        finalBuffer.set([65, 78, 73, 77], 30); 
         finalBuffer.set([6, 0, 0, 0], 34);
-        finalBuffer.set([0, 0, 0, 0], 38); // 배경색상
-        finalBuffer[42] = 1; finalBuffer[43] = 0; // 1회 재생 (loop = 1)
+        finalBuffer.set([0, 0, 0, 0], 38); 
+        finalBuffer[42] = 1; finalBuffer[43] = 0; 
 
         let offset = 44;
         for (let anmf of anmfChunks) {
@@ -381,11 +372,18 @@
         
         let w = img.width, h = img.height;
         const maxWidth = 800;
+        
         if (w > maxWidth) {
             const scale = maxWidth / w;
             w = Math.floor(w * scale);
             h = Math.floor(h * scale);
         }
+
+        // 💡 [수정됨] 크롭(Crop) 오류를 방지하기 위해 이미지를 캔버스 크기에 맞게 미리 축소해 둡니다.
+        const scaledCanvas = document.createElement('canvas');
+        scaledCanvas.width = w; scaledCanvas.height = h;
+        const sCtx = scaledCanvas.getContext('2d');
+        sCtx.drawImage(img, 0, 0, w, h);
 
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
@@ -393,7 +391,6 @@
 
         const webpFrames = [];
 
-        // 캔버스의 현재 화면을 브라우저 네이티브 WebP로 인코딩하여 저장
         const addFrame = (duration) => {
             const dataURL = canvas.toDataURL('image/webp', 0.9);
             webpFrames.push({ buffer: dataURLToUint8Array(dataURL), duration: duration });
@@ -432,7 +429,9 @@
         // 3. 레이저 잔상
         let fh1 = Math.max(2, Math.floor(h * 0.015)), ty1 = Math.floor((h - fh1) / 2);
         ctx.clearRect(0, 0, w, h);
-        ctx.drawImage(img, 0, ty1, w, fh1, 0, ty1, w, fh1);
+        
+        // 💡 [수정됨] 원본 img 대신 크기가 맞춰진 scaledCanvas 사용
+        ctx.drawImage(scaledCanvas, 0, ty1, w, fh1, 0, ty1, w, fh1);
         ctx.globalCompositeOperation = 'source-in'; 
         ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, ${200/255})`; ctx.fillRect(0, ty1, w, fh1);
         ctx.globalCompositeOperation = 'source-over';
@@ -442,7 +441,9 @@
         let fh2 = Math.max(4, Math.floor(h * 0.08)), ty2 = Math.floor((h - fh2) / 2);
         ctx.clearRect(0, 0, w, h);
         ctx.filter = 'brightness(2.5)'; 
-        ctx.drawImage(img, 0, ty2, w, fh2, 0, ty2, w, fh2);
+        
+        // 💡 [수정됨] 원본 img 대신 크기가 맞춰진 scaledCanvas 사용
+        ctx.drawImage(scaledCanvas, 0, ty2, w, fh2, 0, ty2, w, fh2);
         ctx.filter = 'none';
         ctx.globalCompositeOperation = 'source-atop'; 
         ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, 0.8)`; ctx.fillRect(0, ty2, w, fh2);
@@ -456,7 +457,9 @@
             let ch = Math.max(1, Math.min(h, Math.floor(h * ease_t))), ty = Math.floor((h - ch) / 2);
 
             ctx.clearRect(0, 0, w, h);
-            ctx.drawImage(img, 0, ty, w, ch, 0, ty, w, ch);
+            
+            // 💡 [수정됨] 원본 img 대신 크기가 맞춰진 scaledCanvas 사용
+            ctx.drawImage(scaledCanvas, 0, ty, w, ch, 0, ty, w, ch);
 
             let tint_ratio = (1 - ease_t) * 0.7;
             if (tint_ratio > 0.01) {
@@ -465,13 +468,12 @@
                 ctx.globalCompositeOperation = 'source-over';
             }
             addFrame(durationPerFrame);
-            if(i % 5 === 0) await yieldToBrowser(); // 렌더링 중 프리징 방지
+            if(i % 5 === 0) await yieldToBrowser();
         }
 
         statusArea.innerText = "초고속 WebP 병합 중...";
         await yieldToBrowser();
         
-        // 만들어진 개별 프레임들을 하나의 Animated WebP로 병합
         return encodeAnimatedWebP(webpFrames, w, h);
     }
 
@@ -490,7 +492,6 @@
 
                 const webpBlob = await generateSFPopup(file);
                 
-                // 확장자를 .webp 로 통일하여 저장
                 const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
                 const newName = `SF_${baseName}.webp`;
                 const url = URL.createObjectURL(webpBlob);
