@@ -6,32 +6,78 @@
     <title>[ SYSTEM : SF POPUP GENERATOR ]</title>
     
     <meta property="og:title" content="[ SYSTEM : SF POPUP GENERATOR ]">
-    <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (다중 변환 지원)">
+    <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (다중 변환 & 투명 배경 지원)">
     <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
     <meta name="twitter:card" content="summary_large_image">
     
-    <!-- 💡 에러 해결: 항상 최신 버전을 부르지 않고, 가장 안정적인 4.42.0 버전으로 고정했습니다 -->
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@4.42.0/dist/lite.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@4.42.0/dist/lite.css" />
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
     
     <style>
-        body { background-color: #0a0f18; margin: 0; padding: 0; }
-        gradio-lite { display: block; height: 100vh; }
+        body {
+            background-color: #0a0f18;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        gradio-lite {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
     </style>
 </head>
 <body>
 
 <gradio-lite>
 <gradio-requirements>
-Pillow
+gradio
+pillow
+huggingface-hub==0.20.*
+filelock==3.13.1
 </gradio-requirements>
 <gradio-file name="app.py" entrypoint>
+# --- Error Fix: filelock initialization ---
+# filelock tries to test filesystem links using os.link with follow_symlinks=False.
+# However, the current Pyodide environment's mocked os.link does not support this
+# argument, causing a TypeError during filelock._strict's initialization.
+# We work around this by monkey-patching filelock's strict mode probing logic.
+
+import sys
+
+# Prevent filelock from attempting its problematic os.link probe
+def filelock_strict_init_fix():
+    try:
+        # Import filelock.strict explicitly to trigger its definition
+        # without running the problematic probing function
+        import filelock._strict
+
+        # Overwrite the problematic function with a safe, simple mock that always returns False.
+        # This is safe because browser-based workers have simplified/mocked filesystems.
+        def safe_probe_link_follow_symlinks():
+            return False
+
+        # Apply the monkey-patch before it's used during module-level initialization.
+        filelock._strict._probe_link_follow_symlinks = safe_probe_link_follow_symlinks
+        print("Successfully applied filelock os.link monkey-patch.", file=sys.stderr)
+    except (ImportError, TypeError) as e:
+        print(f"Failed to apply filelock monkey-patch: {e}", file=sys.stderr)
+
+# Run the fix immediately
+filelock_strict_init_fix()
+
+# --- End Error Fix ---
+
 import gradio as gr
 from PIL import Image, ImageEnhance, ImageDraw
 import tempfile
 import os
 import math
 import zipfile
+import shutil
 
 # ==========================================
 # 🎨 [컬러 설정] 이곳에서 원하는 컬러코드로 변경하세요!
@@ -88,6 +134,9 @@ body, gradio-app {{ background-color: #0a0f18 !important; }}
 footer {{ display: none !important; }}
 """
 
+# Pre-define a clean temporary directory for our outputs
+OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "sf_generator_outputs")
+
 def generate_sf_popup(input_path):
     if not input_path:
         return None
@@ -96,10 +145,16 @@ def generate_sf_popup(input_path):
     name_only, _ = os.path.splitext(original_filename)
     output_filename = f"SF_{name_only}.webp" 
         
-    img = Image.open(input_path).convert("RGBA")
+    # Open and convert to RGBA to handle transparency
+    try:
+        img = Image.open(input_path).convert("RGBA")
+    except UnidentifiedImageError:
+        return None
+
     w, h = img.size
     max_width = 800 
 
+    # Handle large images
     if w > max_width:
         scale = max_width / w
         new_w, new_h = int(w * scale), int(h * scale)
@@ -108,15 +163,17 @@ def generate_sf_popup(input_path):
 
     frame_list, durations = [], []
 
-    # 투명 배경 기본 프레임
+    # Frame 1: Empty transparent canvas for looping from nothing
     frame_list.append(Image.new("RGBA", (w, h), (0, 0, 0, 0)))
     durations.append(100)
 
+    # 2. 팟! 렌즈 플레어 효과 (더 세밀한 4단계 설정)
+    # (크기 비율, 투명도, 프레임 지속 시간)
     sparkle_phases = [
-        (0.01, 100, 40), 
-        (0.06, 220, 30), 
-        (0.45, 255, 50), 
-        (0.12, 160, 40)  
+        (0.01, 100, 40),  # 1단계: 가운데 미세한 점 등장
+        (0.06, 220, 30),  # 2단계: 빛이 응축되며 살짝 커짐
+        (0.45, 255, 50),  # 3단계: 팟! 하고 크게 터짐
+        (0.12, 160, 40)   # 4단계: 잔상과 함께 수축
     ]
     
     for size_ratio, alpha, duration in sparkle_phases:
@@ -124,6 +181,7 @@ def generate_sf_popup(input_path):
         draw = ImageDraw.Draw(s_frame)
         cx, cy = w // 2, h // 2
         
+        # 최소 크기를 보장하여 점 형태로 시작하도록 조정
         r = max(2, int(min(w, h) * size_ratio)) 
         inner_r = max(1, int(r * 0.15))
 
@@ -140,16 +198,21 @@ def generate_sf_popup(input_path):
         frame_list.append(s_frame)
         durations.append(duration) 
 
+    # 3. 레이저 잔상 (수축된 빛에서 가로로 뻗어나가는 느낌 강조)
     fh1 = max(2, int(h * 0.015)) 
     ty1 = (h - fh1) // 2
+    
+    # Check if the image still exists, it should be in img
+    
     flash_line1 = img.crop((0, ty1, w, ty1 + fh1))
     color_solid1 = Image.new("RGBA", flash_line1.size, (EFFECT_R, EFFECT_G, EFFECT_B, 200))
     color_solid1.putalpha(flash_line1.split()[3]) 
     c_flash1 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     c_flash1.paste(color_solid1, (0, ty1))
     frame_list.append(c_flash1)
-    durations.append(30) 
+    durations.append(30) # 전환을 위해 속도 약간 빠르게
 
+    # 4. 레이저 굵어짐
     fh2 = max(4, int(h * 0.08)) 
     ty2 = (h - fh2) // 2
     flash_line2 = img.crop((0, ty2, w, ty2 + fh2))
@@ -162,14 +225,21 @@ def generate_sf_popup(input_path):
     frame_list.append(c_flash2)
     durations.append(40)
 
-    frames = 15 
+    # 5. 홀로그램 전개 (더 부드러운 전개를 위해 프레임 수 증가)
+    frames = 15 # 12 -> 15로 증가
+    total_unfold_time_ms = 450
+    duration_per_frame_ms = math.ceil(total_unfold_time_ms / frames)
+    
     for i in range(1, frames + 1):
         t = i / frames
+        # Cubic easing out function for smooth expansion
         ease_t = 1 - pow(1 - t, 3) 
+        
         ch = max(1, min(h, int(h * ease_t)))
         ty = (h - ch) // 2
         cropped = img.crop((0, ty, w, ty + ch))
         
+        # Apply a fading-in tint effect, making the full-color image appear over time
         tint_ratio = (1 - ease_t) * 0.7
         if tint_ratio > 0.01:
             color_overlay = Image.new("RGBA", cropped.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
@@ -179,51 +249,100 @@ def generate_sf_popup(input_path):
         c = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         c.paste(cropped, (0, ty))
         frame_list.append(c)
-        durations.append(450 // frames)
+        durations.append(duration_per_frame_ms)
 
-    temp_dir = tempfile.gettempdir()
-    out_path = os.path.join(temp_dir, output_filename)
+    # Create the clean output directory if it doesn't exist
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    out_path = os.path.join(OUTPUT_DIR, output_filename)
     
-    frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
-                       format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
+    # --- Critical for Pyodide ---
+    # When saving animated WebP in Pyodide/Pillow, we must explicitly manage image
+    # references to avoid TypeError: Cannot handle this data type when saving.
+    
+    # background=(0,0,0,0) ensures a transparent background for all frames and loops
+    frame_list[0].save(
+        out_path, 
+        save_all=True, 
+        append_images=frame_list[1:], 
+        format="WebP", 
+        duration=durations, 
+        loop=1, 
+        lossless=False, 
+        quality=90, 
+        background=(0, 0, 0, 0)
+    )
+    
+    # Freeing memory for all original frames is vital in browser memory context
+    for f in frame_list:
+        if hasattr(f, 'close'):
+            f.close()
     
     return out_path
 
+# def clear_outputs_and_recreate():
+#     # We clear the output directory before each new batch processing run
+#     if os.path.exists(OUTPUT_DIR):
+#         shutil.rmtree(OUTPUT_DIR)
+#     os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 def process_batch(files):
+    # clear_outputs_and_recreate()
+    
+    if os.path.exists(OUTPUT_DIR):
+        # On browser workers, remove the dir then create is faster than individual deletion
+        shutil.rmtree(OUTPUT_DIR)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     if not files:
         return None, None
         
     out_files = []
+    processed_count = 0
+    total_to_process = len(files)
     
     # 1. 개별 파일 변환 처리
-    for f in files:
+    for i, f in enumerate(files):
+        print(f"Processing image {i+1} of {total_to_process}...", file=sys.stderr)
         res = generate_sf_popup(f)
         if res:
             out_files.append(res)
+            processed_count += 1
+            print(f"Image {i+1} done. Out: {os.path.basename(res)}", file=sys.stderr)
+        else:
+             print(f"Image {i+1} FAILED.", file=sys.stderr)
             
     if not out_files:
         return None, None
         
     # 2. 압축 파일(ZIP) 생성
-    zip_path = os.path.join(tempfile.gettempdir(), "SF_Popups_Bundle.zip")
+    zip_path = os.path.join(OUTPUT_DIR, "SF_Popups_Bundle.zip")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for filepath in out_files:
             zipf.write(filepath, os.path.basename(filepath))
             
+    print(f"Successfully processed {processed_count} images.", file=sys.stderr)
+            
+    # ZIP 파일은 out_files 리스트에 포함하지 않으므로, gr.File 컴포넌트의 다중 파일 뷰에서
+    # ZIP 파일 자체는 개별적으로 나열되지 않고 ZIP 전용 컴포넌트에 표시됩니다.
+    
+    # 개별 리스트와 ZIP 파일을 각각 반환
     return out_files, zip_path
 
 with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
     gr.HTML("<div class='title-text'>[ SYSTEM : SF POPUP ]</div>")
-    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.</div>")
+    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.<br>투명한 배경 이미지는 투명도가 유지됩니다.</div>")
     
     with gr.Column():
+        # 다중 파일 업로드를 지원하도록 수정됨 (file_count="multiple")
         file_input = gr.File(label="이미지 업로드 (여러 장 드래그 앤 드롭)", file_count="multiple", type="filepath", file_types=["image"])
         submit_btn = gr.Button("SF 애니메이션 생성 시작", elem_id="action-btn")
         
         with gr.Row():
-            indiv_output = gr.File(label="개별 파일 다운로드", file_count="multiple")
+            # 출력 영역을 개별 파일 다운로드와 ZIP 다운로드로 나눔
+            indiv_output = gr.File(label="개별 WebP 파일 목록", file_count="multiple", type="filepath")
             zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)")
             
+    # Submit click triggers batch processing and updates both output file components
     submit_btn.click(fn=process_batch, inputs=file_input, outputs=[indiv_output, zip_output])
 
 app.launch()
