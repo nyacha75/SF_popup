@@ -225,7 +225,7 @@
     <div class="result-area" id="result-area">
         <h3 style="font-size:15px; margin-top:0;">개별 파일 다운로드</h3>
         <ul class="file-list" id="file-list"></ul>
-        <button class="btn" id="zip-btn" style="border-style: dashed;">📦 모두 압축해서 다운로드 (ZIP)</button>
+        <button class="btn" id="zip-btn" style="border-style: dashed;">압축 다운로드 (ZIP)</button>
     </div>
 </div>
 
@@ -505,7 +505,7 @@
                 fileList.appendChild(li);
             }
 
-            statusArea.innerText = "✨ WebP 애니메이션 작업이 완료되었습니다!";
+            statusArea.innerText = "✨ 작업이 완료되었습니다!";
             resultArea.style.display = 'block';
 
         } catch (err) {
