@@ -6,273 +6,430 @@
     <title>[ SYSTEM : SF POPUP GENERATOR ]</title>
     
     <meta property="og:title" content="[ SYSTEM : SF POPUP GENERATOR ]">
-    <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (다중 변환 & 투명 배경 지원)">
+    <meta property="og:description" content="코코포리아 마커 패널용 SF 컷인 생성기 (초고속 웹 버전)">
     <meta property="og:image" content="https://huggingface.co/spaces/Nyacha/SF-Popup-Generator/resolve/main/preview.png?download=true">
     <meta name="twitter:card" content="summary_large_image">
-    
-    <!-- 
-      Gradio Lite(@gradio/lite)는 2025년 9월 Gradio 팀에 의해 개발이 종료(archive)되어
-      더 이상 새 버전이 나오지 않습니다. 5.45.0이 사실상 마지막(고정) 버전이므로,
-      "latest"를 그대로 쓰는 대신 버전을 명시적으로 고정해 둡니다. (동작은 동일합니다)
-    -->
-    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite@5.45.0/dist/lite.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite@5.45.0/dist/lite.css" />
-    
+
+    <!-- 투명 애니메이션(APNG) 및 ZIP 생성을 위한 가벼운 JS 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
     <style>
-        body { background-color: #0a0f18; margin: 0; padding: 0; }
-        gradio-lite { display: block; height: 100vh; }
+        /* 🎨 [컬러 설정] 이곳에서 원하는 컬러로 변경 (CSS) */
+        :root {
+            --effect-hex: #00ffff;
+            --effect-rgb: 0, 255, 255;
+            --bg-color: #0a0f18;
+            --container-bg: #111a28;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: var(--container-bg);
+            border: 1px solid var(--effect-hex);
+            box-shadow: 0 0 15px rgba(var(--effect-rgb), 0.2);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px;
+            margin: 40px 20px;
+            padding: 30px;
+            box-sizing: border-box;
+        }
+        .title-text {
+            color: var(--effect-hex);
+            font-size: 26px;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-shadow: 0 0 10px rgba(var(--effect-rgb), 0.5);
+            letter-spacing: 1px;
+        }
+        .subtitle-text {
+            color: #8888aa;
+            text-align: center;
+            font-size: 13px;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+        /* 파일 업로드 영역 스타일 */
+        .file-upload-wrapper {
+            border: 2px dashed #444;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: 0.3s;
+            position: relative;
+        }
+        .file-upload-wrapper:hover {
+            border-color: var(--effect-hex);
+            background-color: rgba(var(--effect-rgb), 0.05);
+        }
+        .file-upload-wrapper input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+        .file-upload-text {
+            color: #ccc;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            background-color: transparent;
+            border: 2px solid var(--effect-hex);
+            color: var(--effect-hex);
+            padding: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: 0.3s;
+            text-align: center;
+            text-decoration: none;
+            box-sizing: border-box;
+        }
+        .btn:hover:not(:disabled) {
+            background-color: var(--effect-hex);
+            color: var(--container-bg);
+            box-shadow: 0 0 15px rgba(var(--effect-rgb), 0.5);
+        }
+        .btn:disabled {
+            border-color: #555;
+            color: #555;
+            cursor: not-allowed;
+        }
+        #status-area {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #00ffff;
+            min-height: 20px;
+        }
+        .result-area {
+            margin-top: 20px;
+            border-top: 1px solid #333;
+            padding-top: 20px;
+            display: none;
+        }
+        .file-list {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 15px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .file-list li {
+            background: rgba(0,0,0,0.3);
+            margin-bottom: 5px;
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+        .file-list a {
+            color: var(--effect-hex);
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .file-list a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
 
-<gradio-lite>
-<gradio-requirements>
-Pillow
-</gradio-requirements>
-<gradio-file name="app.py" entrypoint>
-import os
+<div class="container">
+    <div class="title-text">[ SYSTEM : SF POPUP ]</div>
+    <div class="subtitle-text">
+        여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.<br>
+        투명한 배경 이미지는 투명도가 유지됩니다. (APNG 포맷으로 저장)
+    </div>
 
-# =================================================================
-# 🛡️ [에러 방지 패치] 브라우저 환경에서 발생하는 쓸데없는 파일시스템 검사 차단
-# =================================================================
-if hasattr(os, 'link'):
-    _orig_link = os.link
-    def _safe_link(*args, **kwargs):
-        kwargs.pop('follow_symlinks', None) # 에러를 일으키는 주범 삭제
-        try:
-            return _orig_link(*args, **kwargs)
-        except Exception:
-            return None
-    os.link = _safe_link
-# =================================================================
+    <div class="file-upload-wrapper" id="drop-zone">
+        <div class="file-upload-text" id="file-label">📂 이미지를 드래그 앤 드롭하거나 클릭해서 여러 장을 선택하세요</div>
+        <input type="file" id="file-input" multiple accept="image/*">
+    </div>
 
-import gradio as gr
-from PIL import Image, ImageEnhance, ImageDraw
-import tempfile
-import math
-import zipfile
+    <button class="btn" id="submit-btn" disabled>SF 애니메이션 생성 시작</button>
+    <div id="status-area"></div>
 
-# 🎨 [컬러 설정] 이곳에서 원하는 컬러코드로 변경하세요!
-EFFECT_R, EFFECT_G, EFFECT_B = 0, 255, 255
-EFFECT_HEX = "#00ffff"
+    <div class="result-area" id="result-area">
+        <h3 style="font-size:15px; margin-top:0;">개별 파일 다운로드</h3>
+        <ul class="file-list" id="file-list"></ul>
+        <button class="btn" id="zip-btn" style="border-style: dashed;">📦 모두 압축해서 다운로드 (ZIP)</button>
+    </div>
+</div>
 
-custom_css = f"""
-body, gradio-app {{ background-color: #0a0f18 !important; }}
-.gradio-container {{
-    background-color: #111a28 !important;
-    border: 1px solid {EFFECT_HEX} !important;
-    box-shadow: 0 0 15px rgba({EFFECT_R}, {EFFECT_G}, {EFFECT_B}, 0.2) !important;
-    border-radius: 8px !important;
-    max-width: 600px !important;
-    margin: 40px auto !important;
-    padding: 30px !important;
-}}
-.title-text {{
-    color: {EFFECT_HEX} !important;
-    font-size: 26px !important;
-    text-align: center !important;
-    font-weight: bold !important;
-    margin-bottom: 5px !important;
-    text-shadow: 0 0 10px rgba({EFFECT_R}, {EFFECT_G}, {EFFECT_B}, 0.5) !important;
-    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif !important;
-    letter-spacing: 1px;
-}}
-.subtitle-text {{
-    color: #8888aa !important;
-    text-align: center !important;
-    font-size: 13px !important;
-    margin-bottom: 25px !important;
-    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif !important;
-}}
-#action-btn {{
-    background-color: transparent !important;
-    border: 2px solid {EFFECT_HEX} !important;
-    color: {EFFECT_HEX} !important;
-    padding: 10px !important;
-    font-size: 16px !important;
-    font-weight: bold !important;
-    border-radius: 4px !important;
-    cursor: pointer !important;
-    margin-top: 15px !important;
-    transition: 0.3s;
-}}
-#action-btn:hover {{
-    background-color: {EFFECT_HEX} !important;
-    color: #111a28 !important;
-    box-shadow: 0 0 15px rgba({EFFECT_R}, {EFFECT_G}, {EFFECT_B}, 0.5) !important;
-}}
-footer {{ display: none !important; }}
-"""
+<script>
+    // ==========================================
+    // 🎨 [이펙트 컬러 설정] 이곳에서 색상을 변경하세요!
+    // ==========================================
+    const EFFECT_R = 0;
+    const EFFECT_G = 255;
+    const EFFECT_B = 255;
+    // ==========================================
 
-def generate_sf_popup(input_path):
-    """
-    성공 시: (출력파일경로, None)
-    실패 시: (None, "에러 설명 문자열")
-    -> 예전에는 실패하면 그냥 None만 반환해서 화면에 아무 표시도 안 되고
-       "그냥 안 됨"처럼 보였습니다. 이제는 실패 이유를 화면에 보여줍니다.
-    """
-    if not input_path:
-        return None, "입력 파일이 없습니다."
+    const fileInput = document.getElementById('file-input');
+    const fileLabel = document.getElementById('file-label');
+    const submitBtn = document.getElementById('submit-btn');
+    const statusArea = document.getElementById('status-area');
+    const resultArea = document.getElementById('result-area');
+    const fileList = document.getElementById('file-list');
+    const zipBtn = document.getElementById('zip-btn');
 
-    original_filename = os.path.basename(input_path)
-    name_only, _ = os.path.splitext(original_filename)
-    output_filename = f"SF_{name_only}.webp"
+    let selectedFiles = [];
+    let generatedFiles = []; // { name, blob, url }
 
-    try:
-        img = Image.open(input_path).convert("RGBA")
-    except Exception as e:
-        return None, f"이미지를 열 수 없습니다 ({type(e).__name__}: {e})"
+    // 파일 선택 이벤트
+    fileInput.addEventListener('change', (e) => {
+        selectedFiles = Array.from(e.target.files);
+        if (selectedFiles.length > 0) {
+            fileLabel.innerHTML = `✅ ${selectedFiles.length}개의 파일이 선택되었습니다.`;
+            submitBtn.disabled = false;
+        } else {
+            fileLabel.innerHTML = `📂 이미지를 드래그 앤 드롭하거나 클릭해서 여러 장을 선택하세요`;
+            submitBtn.disabled = true;
+        }
+    });
 
-    try:
-        w, h = img.size
-        max_width = 800
+    // 브라우저가 잠시 쉴 수 있게 해주는 유틸리티 (UI 멈춤 방지)
+    const yieldToBrowser = () => new Promise(r => setTimeout(r, 10));
 
-        if w > max_width:
-            scale = max_width / w
-            new_w, new_h = int(w * scale), int(h * scale)
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            w, h = new_w, new_h
+    // 이미지 로드 유틸리티
+    const loadImage = (file) => {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+            img.onerror = reject;
+            img.src = url;
+        });
+    };
 
-        frame_list, durations = [], []
-
-        # 1. 투명 배경 대기 프레임
-        frame_list.append(Image.new("RGBA", (w, h), (0, 0, 0, 0)))
-        durations.append(100)
-
-        # 2. 렌즈 플레어 효과
-        sparkle_phases = [
-            (0.01, 100, 40), 
-            (0.06, 220, 30), 
-            (0.45, 255, 50), 
-            (0.12, 160, 40)  
-        ]
+    // 애니메이션 컷인 생성 핵심 로직 (Python Pillow -> HTML5 Canvas 완벽 이식)
+    async function generateSFPopup(file) {
+        const img = await loadImage(file);
         
-        for size_ratio, alpha, duration in sparkle_phases:
-            s_frame = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(s_frame)
-            cx, cy = w // 2, h // 2
-            
-            r = max(2, int(min(w, h) * size_ratio)) 
-            inner_r = max(1, int(r * 0.15))
+        let w = img.width;
+        let h = img.height;
+        const maxWidth = 800;
 
-            flare_w, flare_h = int(w * size_ratio * 1.5), max(2, int(h * 0.015))
-            draw.rectangle([cx - flare_w, cy - flare_h, cx + flare_w, cy + flare_h], fill=(EFFECT_R, EFFECT_G, EFFECT_B, int(alpha * 0.7)))
+        // 크기 조절
+        if (w > maxWidth) {
+            const scale = maxWidth / w;
+            w = Math.floor(w * scale);
+            h = Math.floor(h * scale);
+        }
 
-            points = [(cx, cy - r), (cx + inner_r, cy - inner_r), (cx + r, cy), (cx + inner_r, cy + inner_r), 
-                      (cx, cy + r), (cx - inner_r, cy + inner_r), (cx - r, cy), (cx - inner_r, cy - inner_r)]
-            draw.polygon(points, fill=(EFFECT_R, EFFECT_G, EFFECT_B, alpha))
-            
-            cr = max(1, int(inner_r * 1.2))
-            draw.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=(255, 255, 255, alpha))
-            
-            frame_list.append(s_frame)
-            durations.append(duration) 
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-        # 3. 레이저 잔상
-        fh1 = max(2, int(h * 0.015)) 
-        ty1 = (h - fh1) // 2
-        flash_line1 = img.crop((0, ty1, w, ty1 + fh1))
-        color_solid1 = Image.new("RGBA", flash_line1.size, (EFFECT_R, EFFECT_G, EFFECT_B, 200))
-        color_solid1.putalpha(flash_line1.split()[3]) 
-        c_flash1 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        c_flash1.paste(color_solid1, (0, ty1))
-        frame_list.append(c_flash1)
-        durations.append(30) 
+        const frames = [];
+        const delays = [];
 
-        # 4. 레이저 굵어짐
-        fh2 = max(4, int(h * 0.08)) 
-        ty2 = (h - fh2) // 2
-        flash_line2 = img.crop((0, ty2, w, ty2 + fh2))
-        color_solid2 = Image.new("RGBA", flash_line2.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
-        color_solid2.putalpha(flash_line2.split()[3])
-        mixed_flash = Image.blend(flash_line2, color_solid2, alpha=0.8)
-        mixed_flash = ImageEnhance.Brightness(mixed_flash).enhance(2.5)
-        c_flash2 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        c_flash2.paste(mixed_flash, (0, ty2))
-        frame_list.append(c_flash2)
-        durations.append(40)
+        // 프레임 추가 헬퍼
+        const addFrame = (duration) => {
+            const imgData = ctx.getImageData(0, 0, w, h);
+            frames.push(imgData.data.buffer);
+            delays.push(duration);
+        };
 
-        # 5. 홀로그램 전개 
-        frames = 15 
-        for i in range(1, frames + 1):
-            t = i / frames
-            ease_t = 1 - pow(1 - t, 3) 
-            ch = max(1, min(h, int(h * ease_t)))
-            ty = (h - ch) // 2
-            cropped = img.crop((0, ty, w, ty + ch))
-            
-            tint_ratio = (1 - ease_t) * 0.7
-            if tint_ratio > 0.01:
-                color_overlay = Image.new("RGBA", cropped.size, (EFFECT_R, EFFECT_G, EFFECT_B, 255))
-                color_overlay.putalpha(cropped.split()[3]) 
-                cropped = Image.blend(cropped, color_overlay, alpha=tint_ratio)
-            
-            c = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            c.paste(cropped, (0, ty))
-            frame_list.append(c)
-            durations.append(450 // frames)
+        // 1. 대기 프레임 (투명)
+        ctx.clearRect(0, 0, w, h);
+        addFrame(100);
 
-        out_path = os.path.join(tempfile.gettempdir(), output_filename)
+        // 2. 렌즈 플레어 효과 (4단계)
+        const sparklePhases = [
+            [0.01, 100, 40], [0.06, 220, 30], [0.45, 255, 50], [0.12, 160, 40]
+        ];
+        for (let [size_ratio, alpha, duration] of sparklePhases) {
+            ctx.clearRect(0, 0, w, h);
+            const cx = w / 2, cy = h / 2;
+            const r = Math.max(2, Math.floor(Math.min(w, h) * size_ratio));
+            const inner_r = Math.max(1, Math.floor(r * 0.15));
+            const alphaStr = alpha / 255;
+
+            // 가로 플레어
+            const flare_w = Math.floor(w * size_ratio * 1.5);
+            const flare_h = Math.max(2, Math.floor(h * 0.015));
+            ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, ${alphaStr * 0.7})`;
+            ctx.fillRect(cx - flare_w, cy - flare_h, flare_w * 2, flare_h * 2);
+
+            // 다이아몬드 빛 갈래
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - r);
+            ctx.lineTo(cx + inner_r, cy - inner_r);
+            ctx.lineTo(cx + r, cy);
+            ctx.lineTo(cx + inner_r, cy + inner_r);
+            ctx.lineTo(cx, cy + r);
+            ctx.lineTo(cx - inner_r, cy + inner_r);
+            ctx.lineTo(cx - r, cy);
+            ctx.lineTo(cx - inner_r, cy - inner_r);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, ${alphaStr})`;
+            ctx.fill();
+
+            // 중심 원
+            const cr = Math.max(1, Math.floor(inner_r * 1.2));
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, cr, cr, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${alphaStr})`;
+            ctx.fill();
+
+            addFrame(duration);
+        }
+
+        // 3. 레이저 잔상
+        let fh1 = Math.max(2, Math.floor(h * 0.015));
+        let ty1 = Math.floor((h - fh1) / 2);
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, ty1, w, fh1, 0, ty1, w, fh1);
+        ctx.globalCompositeOperation = 'source-in'; // 알파 채널(투명도) 유지하며 색상 덮어쓰기
+        ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, ${200/255})`;
+        ctx.fillRect(0, ty1, w, fh1);
+        ctx.globalCompositeOperation = 'source-over';
+        addFrame(30);
+
+        // 4. 레이저 굵어짐
+        let fh2 = Math.max(4, Math.floor(h * 0.08));
+        let ty2 = Math.floor((h - fh2) / 2);
+        ctx.clearRect(0, 0, w, h);
         
-        # 투명도(background=(0,0,0,0)) 완벽 유지하며 WebP 저장
-        frame_list[0].save(out_path, save_all=True, append_images=frame_list[1:], 
-                           format="WebP", duration=durations, loop=1, lossless=False, quality=90, background=(0, 0, 0, 0))
+        ctx.filter = 'brightness(2.5)'; // 밝기 강조
+        ctx.drawImage(img, 0, ty2, w, fh2, 0, ty2, w, fh2);
+        ctx.filter = 'none';
         
-        return out_path, None
-    except Exception as e:
-        return None, f"변환 중 오류 발생 ({type(e).__name__}: {e})"
+        ctx.globalCompositeOperation = 'source-atop'; 
+        ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, 0.8)`;
+        ctx.fillRect(0, ty2, w, fh2);
+        ctx.globalCompositeOperation = 'source-over';
+        addFrame(40);
 
-def process_batch(files):
-    if not files:
-        return None, None, "⚠️ 업로드된 파일이 없습니다. 이미지를 먼저 올려주세요."
-
-    out_files = []
-    error_msgs = []
-
-    # 1. 다중 파일 개별 변환
-    for f in files:
-        path, err = generate_sf_popup(f)
-        if path:
-            out_files.append(path)
-        else:
-            error_msgs.append(f"- {os.path.basename(f)}: {err}")
-
-    if not out_files:
-        return None, None, "❌ 변환 실패\n" + "\n".join(error_msgs)
-
-    # 2. 압축 파일(ZIP) 묶기
-    zip_path = os.path.join(tempfile.gettempdir(), "SF_Popups_Bundle.zip")
-    try:
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for filepath in out_files:
-                zipf.write(filepath, os.path.basename(filepath))
-    except Exception as e:
-        return out_files, None, f"⚠️ 개별 파일은 생성되었지만 ZIP 압축 중 오류: {type(e).__name__}: {e}"
-
-    status = f"✅ 총 {len(out_files)}개 파일 변환 완료!"
-    if error_msgs:
-        status += "\n⚠️ 일부 파일 실패:\n" + "\n".join(error_msgs)
-
-    return out_files, zip_path, status
-
-with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as app:
-    gr.HTML("<div class='title-text'>[ SYSTEM : SF POPUP ]</div>")
-    gr.HTML("<div class='subtitle-text'>여러 장의 이미지를 동시에 업로드하여 일괄 변환할 수 있습니다.<br>투명한 배경 이미지는 투명도가 유지됩니다.<br>⏳ 최초 실행 시 브라우저에서 Python 환경을 준비하느라 10~30초 정도 걸릴 수 있습니다.</div>")
-    
-    with gr.Column():
-        file_input = gr.File(label="이미지 업로드 (여러 장 드래그 앤 드롭)", file_count="multiple", type="filepath", file_types=["image"])
-        submit_btn = gr.Button("SF 애니메이션 생성 시작", elem_id="action-btn")
-        status_output = gr.Textbox(label="상태 / 오류 메시지", interactive=False, lines=3)
+        // 5. 홀로그램 전개 (15프레임)
+        const frameCount = 15;
+        const durationPerFrame = Math.floor(450 / frameCount);
         
-        with gr.Row():
-            indiv_output = gr.File(label="개별 WebP 파일 목록", file_count="multiple", type="filepath")
-            zip_output = gr.File(label="모두 압축해서 다운로드 (ZIP)", type="filepath")
+        for (let i = 1; i <= frameCount; i++) {
+            let t = i / frameCount;
+            let ease_t = 1 - Math.pow(1 - t, 3); // Cubic Easing
+            let ch = Math.max(1, Math.min(h, Math.floor(h * ease_t)));
+            let ty = Math.floor((h - ch) / 2);
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(img, 0, ty, w, ch, 0, ty, w, ch);
+
+            let tint_ratio = (1 - ease_t) * 0.7;
+            if (tint_ratio > 0.01) {
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = `rgba(${EFFECT_R}, ${EFFECT_G}, ${EFFECT_B}, ${tint_ratio})`;
+                ctx.fillRect(0, ty, w, ch);
+                ctx.globalCompositeOperation = 'source-over';
+            }
+            addFrame(durationPerFrame);
+            await yieldToBrowser(); // 렌더링 중 멈춤 방지
+        }
+
+        // UPNG.js 를 사용해 ArrayBuffer 프레임들을 애니메이션 PNG(APNG)로 인코딩 (cnum=0 으로 무손실, 알파채널 보존)
+        statusArea.innerText = "프레임을 압축하고 있습니다... (약간의 시간이 소요될 수 있습니다)";
+        await yieldToBrowser();
+        
+        const apngBuffer = UPNG.encode(frames, w, h, 0, delays);
+        return new Blob([apngBuffer], { type: 'image/png' });
+    }
+
+    // 전체 처리 프로세스
+    submitBtn.addEventListener('click', async () => {
+        submitBtn.disabled = true;
+        resultArea.style.display = 'none';
+        fileList.innerHTML = '';
+        generatedFiles.forEach(f => URL.revokeObjectURL(f.url)); // 메모리 정리
+        generatedFiles = [];
+
+        try {
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                statusArea.innerText = `[${i+1} / ${selectedFiles.length}] ${file.name} 변환 중...`;
+                await yieldToBrowser();
+
+                const apngBlob = await generateSFPopup(file);
+                
+                // 원본 확장자를 제외하고 SF_xxx.png 로 이름 생성
+                const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                const newName = `SF_${baseName}.png`;
+                const url = URL.createObjectURL(apngBlob);
+
+                generatedFiles.push({ name: newName, blob: apngBlob, url: url });
+
+                // 리스트에 추가
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>📄 ${newName}</span>
+                    <a href="${url}" download="${newName}">다운로드</a>
+                `;
+                fileList.appendChild(li);
+            }
+
+            statusArea.innerText = "✨ 모든 작업이 완료되었습니다!";
+            resultArea.style.display = 'block';
+
+        } catch (err) {
+            console.error(err);
+            statusArea.innerText = "❌ 처리 중 오류가 발생했습니다. 이미지가 정상적인지 확인해주세요.";
+        } finally {
+            submitBtn.disabled = false;
+        }
+    });
+
+    // ZIP 다운로드 처리
+    zipBtn.addEventListener('click', async () => {
+        if (generatedFiles.length === 0) return;
+        
+        const zipBtnOriginalText = zipBtn.innerText;
+        zipBtn.innerText = "⏳ 압축 중입니다...";
+        zipBtn.disabled = true;
+        await yieldToBrowser();
+
+        try {
+            const zip = new JSZip();
+            generatedFiles.forEach(f => {
+                zip.file(f.name, f.blob);
+            });
+            const content = await zip.generateAsync({ type: "blob" });
             
-    submit_btn.click(fn=process_batch, inputs=file_input, outputs=[indiv_output, zip_output, status_output])
+            const zipUrl = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = zipUrl;
+            a.download = "SF_Popups_Bundle.zip";
+            a.click();
+            URL.revokeObjectURL(zipUrl);
+        } catch(err) {
+            console.error(err);
+            alert("ZIP 생성 중 오류가 발생했습니다.");
+        } finally {
+            zipBtn.innerText = zipBtnOriginalText;
+            zipBtn.disabled = false;
+        }
+    });
 
-app.launch()
-</gradio-file>
-</gradio-lite>
-
+</script>
 </body>
 </html>
